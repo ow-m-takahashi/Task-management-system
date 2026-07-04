@@ -1,0 +1,1275 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>タスク管理ツール</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:'Meiryo',sans-serif; background:#f0f2f5; color:#333; }
+
+/* ログイン */
+.login-page { display:flex; align-items:center; justify-content:center; min-height:100vh; background:linear-gradient(135deg,#1a1f2e,#2d3448); }
+.login-box { background:white; border-radius:16px; padding:48px 40px; width:380px; box-shadow:0 20px 60px rgba(0,0,0,0.3); text-align:center; }
+.login-logo { font-size:32px; margin-bottom:8px; }
+.login-title { font-size:22px; font-weight:bold; color:#1a1f2e; margin-bottom:4px; }
+.login-sub { font-size:13px; color:#888; margin-bottom:32px; }
+.btn-google { display:flex; align-items:center; justify-content:center; gap:12px; width:100%; padding:14px; border:1px solid #ddd; border-radius:10px; background:white; cursor:pointer; font-size:15px; font-family:'Meiryo',sans-serif; transition:background 0.2s; }
+.btn-google:hover { background:#f5f5f5; }
+.btn-google img { width:20px; height:20px; }
+.login-note { margin-top:20px; font-size:11px; color:#aaa; }
+.denied-box { margin-top:20px; background:#ffebee; border:1px solid #f44336; border-radius:8px; padding:14px; font-size:12px; color:#c62828; text-align:left; line-height:1.7; }
+
+/* レイアウト */
+.app { display:none; height:100vh; overflow:hidden; flex-direction:column; }
+.app.show { display:flex; }
+.topbar { background:#1a1f2e; padding:0 24px; height:56px; display:flex; align-items:center; justify-content:space-between; flex-shrink:0; }
+.topbar-logo { font-size:16px; font-weight:bold; color:white; }
+.topbar-logo span { color:#00bfa5; }
+.topbar-right { display:flex; align-items:center; gap:16px; }
+.topbar-user { color:#9aa0b0; font-size:13px; }
+.btn-logout { background:none; border:1px solid #444; color:#9aa0b0; border-radius:6px; padding:5px 12px; cursor:pointer; font-size:12px; }
+.btn-logout:hover { border-color:#888; color:white; }
+
+.body { display:flex; flex:1; overflow:hidden; }
+.sidebar { width:200px; min-width:200px; background:#1a1f2e; display:flex; flex-direction:column; padding-top:8px; }
+.nav-item { display:flex; align-items:center; gap:10px; padding:12px 16px; color:#9aa0b0; cursor:pointer; font-size:14px; border-left:3px solid transparent; transition:background 0.15s; position:relative; }
+.nav-item:hover { background:#252b3d; color:white; }
+.nav-item.active { background:#252b3d; color:white; border-left-color:#00bfa5; }
+.nav-badge { background:#f44336; color:white; border-radius:10px; font-size:10px; padding:1px 6px; margin-left:auto; }
+.nav-bottom { margin-top:auto; border-top:1px solid #2d3448; }
+
+.main { flex:1; overflow:hidden; display:flex; flex-direction:column; }
+.page { display:none; flex:1; overflow:hidden; flex-direction:column; }
+.page.active { display:flex; }
+.page-header { background:white; padding:14px 24px; font-size:18px; font-weight:bold; border-bottom:1px solid #e0e0e0; display:flex; align-items:center; justify-content:space-between; flex-shrink:0; }
+.header-btns { display:flex; gap:8px; }
+
+/* アラートバナー */
+.alert-banner { background:#fff3e0; border-bottom:2px solid #ff9800; padding:10px 24px; display:none; align-items:center; gap:12px; flex-wrap:wrap; flex-shrink:0; }
+.alert-banner.show { display:flex; }
+.alert-banner-title { font-weight:bold; font-size:13px; color:#e65100; }
+.alert-item { font-size:12px; background:white; border:1px solid #ffcc02; border-radius:6px; padding:3px 10px; cursor:pointer; }
+.alert-item.overdue { border-color:#f44336; background:#ffebee; color:#c62828; }
+.alert-item.blocked { border-color:#f44336; background:#fce4ec; color:#ad1457; }
+.alert-banner-close { margin-left:auto; background:none; border:none; color:#aaa; cursor:pointer; font-size:16px; }
+
+/* クイック追加 */
+.quick-add { background:#e0f2f1; border-bottom:2px solid #00bfa5; padding:10px 24px; display:flex; gap:8px; align-items:center; flex-wrap:wrap; flex-shrink:0; }
+.quick-add-label { font-size:12px; font-weight:bold; color:#00695c; white-space:nowrap; }
+.quick-add input, .quick-add select { padding:7px 10px; border:1px solid #b2dfdb; border-radius:6px; font-size:13px; font-family:'Meiryo',sans-serif; background:white; }
+.quick-add input:focus, .quick-add select:focus { outline:2px solid #00bfa5; border-color:transparent; }
+#qaTitle { flex:1; min-width:200px; }
+.btn-qa { background:#00bfa5; color:white; border:none; border-radius:6px; padding:8px 20px; cursor:pointer; font-size:13px; font-weight:bold; font-family:'Meiryo',sans-serif; }
+.btn-qa:hover { background:#00897b; }
+/* PCでは qa-extra は透過ラッパー（レイアウトに影響しない）、詳細トグルは非表示 */
+.qa-extra { display:contents; }
+.btn-qa-more { display:none; background:white; color:#00897b; border:1px solid #b2dfdb; border-radius:6px; padding:8px 14px; cursor:pointer; font-size:13px; font-family:'Meiryo',sans-serif; }
+
+/* フィルターバー */
+.filter-bar { background:white; padding:8px 24px; border-bottom:1px solid #e0e0e0; display:flex; gap:12px; align-items:center; flex-wrap:wrap; flex-shrink:0; }
+.filter-bar select, .filter-bar input[type=text] { padding:5px 10px; border:1px solid #ddd; border-radius:6px; font-size:13px; font-family:'Meiryo',sans-serif; }
+.filter-bar label { font-size:12px; color:#888; display:flex; align-items:center; gap:4px; }
+.filter-count { font-size:12px; color:#00897b; font-weight:bold; }
+.btn-clear { background:none; border:none; color:#aaa; cursor:pointer; font-size:12px; padding:4px 8px; }
+
+/* カンバン */
+.board { display:flex; gap:10px; padding:12px; overflow-x:auto; flex:1; }
+.column { background:#e4e8ef; border-radius:10px; padding:10px; min-width:210px; max-width:210px; display:flex; flex-direction:column; gap:8px; overflow-y:auto; }
+.column.drag-over { outline:2px dashed #00bfa5; }
+.column-title { font-weight:bold; font-size:11px; padding:4px 6px; border-radius:6px; text-align:center; color:white; flex-shrink:0; }
+.column-count { font-size:11px; color:#888; text-align:right; flex-shrink:0; }
+.card { background:white; border-radius:8px; padding:9px; box-shadow:0 1px 4px rgba(0,0,0,0.12); cursor:pointer; font-size:11px; }
+.card:hover { box-shadow:0 3px 10px rgba(0,0,0,0.18); }
+.card.dragging { opacity:0.4; }
+.card-title { font-weight:bold; font-size:12px; margin-bottom:3px; line-height:1.4; }
+.card-info { color:#888; font-size:10px; margin-bottom:1px; }
+.card-chip { display:inline-block; background:#e8f0fe; color:#1a73e8; border-radius:4px; padding:1px 5px; font-size:9px; margin-top:3px; margin-right:2px; }
+.card-badge { display:inline-block; border-radius:4px; padding:1px 5px; font-size:9px; margin-top:3px; margin-right:2px; }
+.badge-stall-y { background:#fff8e1; color:#f57f17; }
+.badge-stall-r { background:#ffebee; color:#c62828; }
+.badge-due-over { background:#f44336; color:white; }
+.badge-due-today { background:#fff3e0; color:#e65100; }
+.badge-block { background:#fce4ec; color:#ad1457; }
+.badge-check { background:#e8f5e9; color:#2e7d32; }
+.prio-high { border-left:4px solid #f44336; }
+.prio-low { border-left:4px solid #90a4ae; }
+/* スマホ用「次へ進める」ボタン（タッチではドラッグ&ドロップが使えないため） */
+.card-advance { display:none; margin-top:6px; width:100%; background:#e0f2f1; color:#00695c; border:1px solid #b2dfdb; border-radius:6px; padding:7px; cursor:pointer; font-size:12px; font-family:'Meiryo',sans-serif; }
+
+/* 一覧テーブル */
+.table-wrap { flex:1; overflow:auto; padding:16px 24px; }
+table.list-table { width:100%; border-collapse:collapse; background:white; border-radius:8px; overflow:hidden; box-shadow:0 1px 4px rgba(0,0,0,0.1); font-size:12px; }
+.list-table th { background:#1a1f2e; color:white; padding:8px 10px; text-align:left; font-size:11px; white-space:nowrap; cursor:pointer; user-select:none; position:sticky; top:0; }
+.list-table th:hover { background:#2d3448; }
+.list-table td { padding:7px 10px; border-bottom:1px solid #f0f0f0; }
+.list-table tr:hover td { background:#f5f9ff; cursor:pointer; }
+.st-chip { display:inline-block; border-radius:10px; padding:2px 8px; font-size:10px; color:white; white-space:nowrap; }
+.td-over { color:#c62828; font-weight:bold; }
+.td-today { color:#e65100; font-weight:bold; }
+
+/* ダッシュボード */
+.dash-body { flex:1; overflow-y:auto; padding:16px 24px; }
+.dash-cards { display:flex; gap:12px; flex-wrap:wrap; margin-bottom:16px; }
+.dash-card { background:white; border-radius:10px; padding:14px 20px; box-shadow:0 1px 4px rgba(0,0,0,0.1); min-width:150px; cursor:pointer; }
+.dash-card-num { font-size:26px; font-weight:bold; }
+.dash-card-label { font-size:12px; color:#888; margin-top:2px; }
+.dash-card.warn .dash-card-num { color:#e65100; }
+.dash-card.danger .dash-card-num { color:#c62828; }
+.dash-card.ok .dash-card-num { color:#2e7d32; }
+.dash-section { background:white; border-radius:10px; padding:16px 20px; box-shadow:0 1px 4px rgba(0,0,0,0.1); margin-bottom:16px; }
+.dash-section h3 { font-size:14px; margin-bottom:10px; }
+.dash-table { width:100%; border-collapse:collapse; font-size:12px; }
+.dash-table th { background:#f6f8fb; padding:6px 10px; text-align:left; font-size:11px; color:#666; white-space:nowrap; }
+.dash-table td { padding:6px 10px; border-bottom:1px solid #f0f0f0; }
+.dash-table tr.clickable:hover td { background:#f5f9ff; cursor:pointer; }
+.num-bad { color:#c62828; font-weight:bold; }
+.num-warn { color:#e65100; font-weight:bold; }
+.num-zero { color:#ccc; }
+.empty-note { color:#aaa; font-size:12px; padding:8px 0; }
+
+/* モーダル */
+.modal-bg { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:100; align-items:flex-start; justify-content:center; overflow-y:auto; padding:40px 16px; }
+.modal-bg.show { display:flex; }
+.modal { background:white; border-radius:12px; padding:24px; width:640px; max-width:100%; }
+.modal h2 { font-size:16px; margin-bottom:16px; }
+.form-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px 14px; }
+.form-row { display:flex; flex-direction:column; gap:4px; }
+.form-row.full { grid-column:1/-1; }
+.form-row label { font-size:11px; color:#888; font-weight:bold; }
+.form-row input, .form-row select, .form-row textarea { padding:8px 10px; border:1px solid #ccc; border-radius:6px; font-size:13px; font-family:'Meiryo',sans-serif; }
+.form-row textarea { resize:vertical; min-height:60px; }
+.blocked-fields { grid-column:1/-1; background:#fce4ec; border:1px solid #f8bbd0; border-radius:8px; padding:12px; display:none; grid-template-columns:1fr 1fr; gap:10px 14px; }
+.blocked-fields.show { display:grid; }
+.modal-btns { display:flex; gap:8px; margin-top:18px; justify-content:flex-end; }
+.btn-primary { background:#00bfa5; color:white; border:none; border-radius:6px; padding:9px 22px; cursor:pointer; font-size:13px; font-weight:bold; font-family:'Meiryo',sans-serif; }
+.btn-primary:hover { background:#00897b; }
+.btn-cancel { background:#eee; color:#555; border:none; border-radius:6px; padding:9px 18px; cursor:pointer; font-size:13px; font-family:'Meiryo',sans-serif; }
+.btn-danger { background:none; color:#f44336; border:1px solid #f44336; border-radius:6px; padding:9px 14px; cursor:pointer; font-size:12px; font-family:'Meiryo',sans-serif; margin-right:auto; }
+.btn-done-quick { background:#4caf50; color:white; border:none; border-radius:6px; padding:9px 18px; cursor:pointer; font-size:13px; font-weight:bold; font-family:'Meiryo',sans-serif; }
+.modal-meta { font-size:11px; color:#aaa; margin-top:10px; line-height:1.6; }
+
+/* チェックリスト・コメント */
+.sub-section { grid-column:1/-1; border-top:1px solid #eee; padding-top:12px; margin-top:4px; }
+.sub-section h4 { font-size:12px; color:#666; margin-bottom:8px; }
+.chk-item { display:flex; align-items:center; gap:8px; padding:4px 0; font-size:13px; }
+.chk-item.done span { text-decoration:line-through; color:#aaa; }
+.chk-item button { margin-left:auto; background:none; border:none; color:#ccc; cursor:pointer; font-size:13px; }
+.chk-item button:hover { color:#f44336; }
+.chk-add { display:flex; gap:8px; margin-top:6px; }
+.chk-add input { flex:1; padding:6px 10px; border:1px solid #ccc; border-radius:6px; font-size:13px; font-family:'Meiryo',sans-serif; }
+.cmt-item { background:#f6f8fb; border-radius:8px; padding:8px 12px; margin-bottom:6px; font-size:12px; }
+.cmt-head { font-size:10px; color:#888; margin-bottom:3px; }
+.cmt-add { display:flex; gap:8px; margin-top:6px; }
+.cmt-add input { flex:1; padding:6px 10px; border:1px solid #ccc; border-radius:6px; font-size:13px; font-family:'Meiryo',sans-serif; }
+.btn-small { background:#e8f0fe; color:#1a73e8; border:none; border-radius:6px; padding:6px 14px; cursor:pointer; font-size:12px; font-family:'Meiryo',sans-serif; white-space:nowrap; }
+
+/* 設定 */
+.settings-body { flex:1; overflow-y:auto; padding:16px 24px; }
+.staff-item { display:flex; align-items:center; gap:10px; padding:8px 0; border-bottom:1px solid #f0f0f0; font-size:13px; }
+.staff-item.staff-inactive { opacity:0.45; }
+.staff-role { font-size:11px; padding:2px 8px; border-radius:10px; background:#e8f0fe; color:#1a73e8; white-space:nowrap; }
+.staff-role.admin { background:#f3e5f5; color:#9c27b0; }
+.staff-add-row { display:flex; gap:8px; margin-top:12px; flex-wrap:wrap; }
+.staff-add-row input, .staff-add-row select { padding:7px 10px; border:1px solid #ccc; border-radius:6px; font-size:13px; font-family:'Meiryo',sans-serif; }
+.staff-note { font-size:12px; color:#888; margin-bottom:12px; line-height:1.6; }
+.stall-setting-row { display:flex; gap:12px; align-items:center; font-size:13px; flex-wrap:wrap; }
+.stall-setting-row input { width:60px; padding:6px 8px; border:1px solid #ccc; border-radius:6px; font-size:13px; text-align:center; }
+
+/* ============ スマホ対応（768px以下） ============ */
+@media (max-width: 768px) {
+  /* iOSは16px未満の入力欄にフォーカスすると勝手にズームするため16pxにする */
+  input, select, textarea { font-size:16px !important; }
+
+  /* トップバー */
+  .topbar { padding:0 12px; height:48px; }
+  .topbar-logo { font-size:14px; }
+  .topbar-user { display:none; }
+  .btn-logout { padding:5px 10px; }
+
+  /* サイドバー → 画面下のタブバー */
+  .body { flex-direction:column; }
+  .sidebar { order:2; width:100%; min-width:0; flex-direction:row; padding:0; flex-shrink:0; border-top:1px solid #2d3448; padding-bottom:env(safe-area-inset-bottom); }
+  .nav-item { flex:1; justify-content:center; padding:12px 2px; font-size:11px; gap:4px; border-left:none; border-top:3px solid transparent; white-space:nowrap; }
+  .nav-item.active { border-left-color:transparent; border-top-color:#00bfa5; }
+  .nav-badge { position:absolute; top:4px; right:8px; margin-left:0; }
+  .nav-bottom { display:contents; }
+
+  /* クイック追加: タイトル＋追加だけを常時表示、詳細は折りたたみ */
+  .quick-add { padding:8px 12px; gap:6px; }
+  .quick-add-label { display:none; }
+  #qaTitle { flex:1 1 100%; min-width:0; }
+  .qa-extra { display:none; flex:1 1 100%; flex-wrap:wrap; gap:6px; }
+  .quick-add.open .qa-extra { display:flex; }
+  .qa-extra select, .qa-extra input { flex:1 1 45%; min-width:0; width:auto !important; }
+  .btn-qa-more { display:inline-block; }
+  .btn-qa { flex:1; padding:10px; }
+
+  /* フィルター */
+  .filter-bar { padding:8px 12px; gap:6px; }
+  .filter-bar input[type=text] { flex:1 1 100%; width:auto !important; }
+  .filter-bar label { flex:1; }
+  .filter-bar select { flex:1; min-width:0; }
+
+  /* カンバン: 1列ずつ横スワイプ */
+  .board { padding:8px; gap:8px; scroll-snap-type:x mandatory; -webkit-overflow-scrolling:touch; }
+  .column { min-width:82vw; max-width:82vw; scroll-snap-align:center; }
+  .card { font-size:12px; padding:12px; }
+  .card-title { font-size:14px; }
+  .card-info { font-size:11px; }
+  .card-chip, .card-badge { font-size:10px; }
+  .card-advance { display:block; }
+
+  /* 一覧・ダッシュボード・設定 */
+  .page-header { padding:10px 12px; font-size:15px; flex-wrap:wrap; gap:6px; }
+  .table-wrap { padding:8px; }
+  .list-table { min-width:760px; }
+  .dash-body { padding:10px; }
+  .dash-cards { gap:8px; }
+  .dash-card { min-width:calc(50% - 4px); flex:1; padding:12px 14px; }
+  .dash-card-num { font-size:22px; }
+  .dash-section { padding:12px; overflow-x:auto; }
+  .dash-table { min-width:520px; }
+  .settings-body { padding:10px; }
+  .staff-add-row input { flex:1 1 100%; width:auto !important; }
+  .staff-item { flex-wrap:wrap; }
+
+  /* モーダル: 全画面表示 */
+  .modal-bg { padding:0; }
+  .modal { width:100%; min-height:100vh; border-radius:0; padding:16px 14px calc(24px + env(safe-area-inset-bottom)); }
+  .form-grid { grid-template-columns:1fr; }
+  .blocked-fields { grid-template-columns:1fr; }
+  .modal-btns { flex-wrap:wrap; gap:8px; }
+  .modal-btns button { flex:1; white-space:nowrap; }
+  .btn-danger { flex:0 0 100%; order:9; margin-right:0; }
+}
+</style>
+</head>
+<body>
+
+<!-- ログインページ -->
+<div id="loginPage" class="login-page">
+  <div class="login-box">
+    <div class="login-logo">✅</div>
+    <div class="login-title">タスク管理ツール</div>
+    <div class="login-sub">チームのタスクを抜け漏れなく管理</div>
+    <button class="btn-google" id="btnGoogleLogin">
+      <img src="https://www.google.com/favicon.ico" alt="G">
+      Googleでログイン
+    </button>
+    <div class="login-note">※ 招待されたアカウントのみアクセス可能（ATSと共通）</div>
+    <div class="denied-box" id="deniedBox" style="display:none;">
+      <b>⛔ このアカウントは招待されていません</b><br>
+      <span id="deniedEmail"></span><br>
+      管理者にスタッフ招待を依頼するか、別のアカウントでログインしてください。
+      <button class="btn-cancel" id="deniedLogoutBtn" style="margin-top:10px;width:100%;">別のアカウントでログイン</button>
+    </div>
+  </div>
+</div>
+
+<!-- アプリ本体 -->
+<div id="app" class="app">
+  <div class="topbar">
+    <div class="topbar-logo">✅ <span>TASK</span> タスク管理</div>
+    <div class="topbar-right">
+      <button class="btn-logout" id="btnReload">🔄 更新</button>
+      <span class="topbar-user" id="topbarUser"></span>
+      <button class="btn-logout" id="btnLogout">ログアウト</button>
+    </div>
+  </div>
+  <div class="body">
+    <div class="sidebar">
+      <div class="nav-item active" data-page="board">🗂 タスクボード</div>
+      <div class="nav-item" data-page="list">📋 タスク一覧</div>
+      <div class="nav-item" data-page="dashboard">📊 ダッシュボード<span class="nav-badge" id="dashBadge" style="display:none">0</span></div>
+      <div class="nav-bottom">
+        <div class="nav-item" data-page="settings">⚙️ 設定</div>
+      </div>
+    </div>
+    <div class="main">
+
+      <!-- アラートバナー -->
+      <div class="alert-banner" id="alertBanner">
+        <span class="alert-banner-title">⚠️ あなたの要注意タスク</span>
+        <span id="alertItems"></span>
+        <button class="alert-banner-close" id="alertClose">✕</button>
+      </div>
+
+      <!-- タスクボード -->
+      <div class="page active" data-page="board">
+        <div class="quick-add">
+          <span class="quick-add-label">⚡ クイック追加</span>
+          <input type="text" id="qaTitle" placeholder="依頼内容を入力してEnter（例: A社に見積送付）">
+          <div class="qa-extra">
+            <select id="qaSource"></select>
+            <input type="text" id="qaRequester" placeholder="依頼元（人・会社）" style="width:130px;">
+            <select id="qaAssignee"></select>
+            <input type="date" id="qaDue" title="期限">
+            <select id="qaPriority">
+              <option value="high">🔴 高</option>
+              <option value="normal" selected>⚪ 中</option>
+              <option value="low">🔵 低</option>
+            </select>
+          </div>
+          <button class="btn-qa-more" id="qaMoreBtn">詳細 ▾</button>
+          <button class="btn-qa" id="qaAddBtn">追加</button>
+        </div>
+        <div class="filter-bar">
+          <input type="text" id="filterSearch" placeholder="🔍 検索（タイトル・依頼元・メモ）" style="width:220px;">
+          <label>担当 <select id="filterAssignee"></select></label>
+          <label>経路 <select id="filterSource"></select></label>
+          <span class="filter-count" id="filterCount"></span>
+          <button class="btn-clear" id="filterClear">✕ クリア</button>
+        </div>
+        <div class="board" id="boardEl"></div>
+      </div>
+
+      <!-- タスク一覧 -->
+      <div class="page" data-page="list">
+        <div class="page-header">📋 タスク一覧<div class="header-btns"><span style="font-size:12px;color:#888;font-weight:normal;">列見出しクリックで並び替え</span></div></div>
+        <div class="filter-bar">
+          <input type="text" id="listSearch" placeholder="🔍 検索" style="width:200px;">
+          <label>担当 <select id="listAssignee"></select></label>
+          <label><input type="checkbox" id="listShowDone"> 完了も表示</label>
+          <span class="filter-count" id="listCount"></span>
+        </div>
+        <div class="table-wrap"><table class="list-table" id="listTable"></table></div>
+      </div>
+
+      <!-- ダッシュボード -->
+      <div class="page" data-page="dashboard">
+        <div class="page-header">📊 ダッシュボード — 誰が何に詰まっているか</div>
+        <div class="dash-body" id="dashBody"></div>
+      </div>
+
+      <!-- 設定 -->
+      <div class="page" data-page="settings">
+        <div class="page-header">⚙️ 設定</div>
+        <div class="settings-body">
+          <div class="dash-section">
+            <h3>👥 スタッフ管理（ログイン許可リスト）</h3>
+            <p class="staff-note">⚠️ このリストは <b>ATS採用管理システムと共通</b> です。ここに追加した人はATSにもログインできるようになります（逆も同様）。</p>
+            <div id="staffListEl"></div>
+            <div class="staff-add-row" id="staffAddRow">
+              <input type="email" id="staffEmail" placeholder="メールアドレス（Gmail）" style="width:220px;">
+              <input type="text" id="staffName" placeholder="表示名" style="width:140px;">
+              <select id="staffRole"><option value="member">メンバー</option><option value="admin">管理者</option></select>
+              <button class="btn-primary" id="staffAddBtn">追加</button>
+            </div>
+          </div>
+          <div class="dash-section">
+            <h3>⏳ 停滞の判定日数</h3>
+            <p class="staff-note">タスクが動いていない（更新・コメントがない）日数がここを超えると警告バッジが付きます。この設定はこのブラウザにのみ保存されます。</p>
+            <div class="stall-setting-row">
+              🟡 黄色バッジ: <input type="number" id="stallYellowInput" min="1"> 日以上
+              🔴 赤バッジ: <input type="number" id="stallRedInput" min="1"> 日以上
+              <button class="btn-primary" id="stallSaveBtn">保存</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- タスク編集モーダル -->
+<div class="modal-bg" id="taskModal">
+  <div class="modal">
+    <h2 id="taskModalTitle">タスク編集</h2>
+    <div class="form-grid">
+      <div class="form-row full">
+        <label>タイトル *</label>
+        <input type="text" id="tTitle">
+      </div>
+      <div class="form-row full">
+        <label>詳細メモ</label>
+        <textarea id="tDesc"></textarea>
+      </div>
+      <div class="form-row">
+        <label>ステータス</label>
+        <select id="tStatus"></select>
+      </div>
+      <div class="form-row">
+        <label>優先度</label>
+        <select id="tPriority">
+          <option value="high">🔴 高</option>
+          <option value="normal">⚪ 中</option>
+          <option value="low">🔵 低</option>
+        </select>
+      </div>
+      <div class="form-row">
+        <label>担当者</label>
+        <select id="tAssignee"></select>
+      </div>
+      <div class="form-row">
+        <label>期限</label>
+        <input type="date" id="tDue">
+      </div>
+      <div class="form-row">
+        <label>依頼経路</label>
+        <select id="tSource"></select>
+      </div>
+      <div class="form-row">
+        <label>依頼元（人・会社）</label>
+        <input type="text" id="tRequester">
+      </div>
+      <div class="blocked-fields" id="blockedFields">
+        <div class="form-row">
+          <label>🚧 何を待っている？（誰待ち・何待ち）*</label>
+          <input type="text" id="tWaitingOn" placeholder="例: B社の回答待ち／山田さんの承認待ち">
+        </div>
+        <div class="form-row">
+          <label>状況の補足</label>
+          <input type="text" id="tBlockedReason" placeholder="例: 6/30にメールで催促済み">
+        </div>
+      </div>
+
+      <div class="sub-section" id="checklistSection">
+        <h4>☑️ チェックリスト（サブタスク）<span id="chkProgress" style="color:#aaa;font-weight:normal;"></span></h4>
+        <div id="chkList"></div>
+        <div class="chk-add">
+          <input type="text" id="chkNewText" placeholder="サブタスクを追加してEnter">
+          <button class="btn-small" id="chkAddBtn">追加</button>
+        </div>
+      </div>
+
+      <div class="sub-section" id="commentSection">
+        <h4>💬 進捗メモ・コメント</h4>
+        <div id="cmtList"></div>
+        <div class="cmt-add">
+          <input type="text" id="cmtNewText" placeholder="進捗や引き継ぎメモを入力してEnter（停滞タイマーがリセットされます）">
+          <button class="btn-small" id="cmtAddBtn">投稿</button>
+        </div>
+      </div>
+    </div>
+    <div class="modal-meta" id="taskMeta"></div>
+    <div class="modal-btns">
+      <button class="btn-danger" id="tDeleteBtn">🗑 削除</button>
+      <button class="btn-cancel" id="tCancelBtn">閉じる</button>
+      <button class="btn-done-quick" id="tDoneBtn">✅ 完了にする</button>
+      <button class="btn-primary" id="tSaveBtn">保存</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const SUPABASE_URL = 'https://fuqyfcnrlkvhvewmbozh.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ1cXlmY25ybGt2aHZld21ib3poIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE1NTc2MzQsImV4cCI6MjA5NzEzMzYzNH0.I35AYib2sibC8nGa9aB5kvG9azGj6ckyHg-avWihUio';
+
+const { createClient } = supabase;
+const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  auth: { persistSession: true, storageKey: 'task-auth', storage: window.localStorage }
+});
+
+let tasksList = [], staffList = [], staffLoadError = false;
+let currentUser = null, isAdminUser = false, appInitialized = false;
+let editingId = null, editChecklist = [], editComments = [];
+let filterState = { search:'', assignee:'', source:'' };
+let listSort = { key:'due_date', dir:1 };
+let searchTimer = null;
+let idSeq = 0;
+const nextId = () => Date.now() * 1000 + (idSeq++ % 1000);
+
+const STATUSES = [
+  {key:'inbox',  label:'📥 受信箱',     color:'#607d8b', hint:'担当未定・未振り分け'},
+  {key:'todo',   label:'📋 未着手',     color:'#ff9800'},
+  {key:'doing',  label:'🚀 進行中',     color:'#2196f3'},
+  {key:'blocked',label:'🚧 ブロック中', color:'#e91e63', hint:'誰か・何かを待っている'},
+  {key:'done',   label:'✅ 完了',       color:'#4caf50'}
+];
+const OPEN_STATUSES = new Set(['inbox','todo','doing','blocked']);
+// スマホ用「次へ進める」ボタンの遷移先
+const NEXT_STATUS = { inbox:'todo', todo:'doing', doing:'done', blocked:'doing' };
+const SOURCES = [
+  ['電話','📞'],['メール','📧'],['LINE','💚'],['Slack','💬'],
+  ['Chatwork','💼'],['wowトーク','🗨️'],['口頭','🗣️'],['その他','📌']
+];
+const PRIO_ICON = { high:'🔴', normal:'⚪', low:'🔵' };
+const MAX_CARDS_PER_COLUMN = 200;
+const DONE_SHOW_DAYS = 14;
+
+function stallYellow() { return parseInt(localStorage.getItem('task-stall-y')) || 3; }
+function stallRed() { return parseInt(localStorage.getItem('task-stall-r')) || 7; }
+
+function esc(str) {
+  if (!str) return '';
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function todayKey() {
+  const d = new Date();
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
+function fmtShort(dateStr) {
+  if (!dateStr) return '';
+  return String(dateStr).slice(5,10).replace('-','/');
+}
+function fmtDateTime(ts) {
+  if (!ts) return '';
+  const d = new Date(ts);
+  return `${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+}
+function daysSince(ts) {
+  if (!ts) return null;
+  const d = Math.floor((Date.now() - new Date(ts).getTime()) / 86400000);
+  return d >= 0 ? d : 0;
+}
+function statusOf(key) { return STATUSES.find(s=>s.key===key) || STATUSES[0]; }
+function sourceIcon(name) { const s = SOURCES.find(x=>x[0]===name); return s ? s[1] : '📌'; }
+
+// 停滞日数（最後に動きがあってからの日数）。完了タスクは対象外
+function stallDays(t) {
+  if (t.status === 'done') return null;
+  return daysSince(t.last_activity_at || t.created_at);
+}
+// 期限の状態: 'over'=期限切れ, 'today'=本日期限
+function dueState(t) {
+  if (!t.due_date || t.status === 'done') return null;
+  const tk = todayKey();
+  if (t.due_date < tk) return 'over';
+  if (t.due_date === tk) return 'today';
+  return null;
+}
+function myName() {
+  const email = (currentUser?.email || '').toLowerCase();
+  const rec = staffList.find(s => (s.email||'').toLowerCase() === email);
+  return rec?.name || currentUser?.email || '';
+}
+function checklistProgress(t) {
+  const list = Array.isArray(t.checklist) ? t.checklist : [];
+  if (!list.length) return null;
+  return { done: list.filter(c=>c.done).length, total: list.length };
+}
+
+// ===== 認証 =====
+document.getElementById('btnGoogleLogin').addEventListener('click', async()=>{
+  await sb.auth.signInWithOAuth({ provider:'google', options:{ redirectTo: window.location.origin } });
+});
+document.getElementById('btnLogout').addEventListener('click', async()=>{
+  await sb.auth.signOut();
+  location.reload();
+});
+document.getElementById('deniedLogoutBtn').addEventListener('click', async()=>{
+  await sb.auth.signOut();
+  location.reload();
+});
+
+sb.auth.onAuthStateChange(async(event, session)=>{
+  if (session) {
+    currentUser = session.user;
+    if (!appInitialized) {
+      appInitialized = true;
+      const access = await checkStaffAccess(session);
+      if (!access.ok) { appInitialized = false; showAccessDenied(session.user.email); return; }
+      isAdminUser = (access.role === 'admin');
+      document.getElementById('deniedBox').style.display='none';
+      document.getElementById('loginPage').style.display='none';
+      document.getElementById('app').classList.add('show');
+      document.getElementById('topbarUser').textContent = session.user.email + (isAdminUser ? '（管理者）' : '');
+      await loadAllData();
+      showMyAlerts();
+    }
+  } else {
+    appInitialized = false;
+    document.getElementById('loginPage').style.display='flex';
+    document.getElementById('app').classList.remove('show');
+  }
+});
+
+// スタッフ許可リストチェック（ATSと共通のstaffテーブル。未作成・空のときはゲートなしで通す）
+async function checkStaffAccess(session) {
+  const email = (session.user.email || '').toLowerCase();
+  const { data, error } = await sb.from('staff').select('*');
+  if (error) { staffLoadError = true; staffList = []; return { ok:true, role:'admin' }; }
+  staffLoadError = false;
+  staffList = data || [];
+  if (!staffList.length) {
+    const me = { id: Date.now(), email, name: session.user.user_metadata?.full_name || email, role:'admin', active:true };
+    const { error: e2 } = await sb.from('staff').insert(me);
+    if (!e2) staffList.push(me);
+    return { ok:true, role:'admin' };
+  }
+  const rec = staffList.find(s => (s.email || '').toLowerCase() === email);
+  if (!rec || rec.active === false) return { ok:false };
+  return { ok:true, role: rec.role || 'member' };
+}
+
+function showAccessDenied(email) {
+  document.getElementById('loginPage').style.display='flex';
+  document.getElementById('app').classList.remove('show');
+  document.getElementById('deniedEmail').textContent = email;
+  document.getElementById('deniedBox').style.display='block';
+}
+
+// ===== データ =====
+// Supabaseは1回の取得で最大1000件までのため、全件を分割取得する
+async function fetchAllRows(table, orderCol) {
+  const all=[]; const page=1000;
+  for (let from=0;;from+=page) {
+    let q = sb.from(table).select('*').range(from,from+page-1);
+    if (orderCol) q = q.order(orderCol,{ascending:false});
+    const {data,error}=await q;
+    if (error) return {data:all,error};
+    all.push(...(data||[]));
+    if (!data||data.length<page) return {data:all,error:null};
+  }
+}
+
+async function loadAllData() {
+  const res = await fetchAllRows('tasks','created_at');
+  if (res.error && !res.data.length) {
+    alert('⚠️ tasks テーブルが読み込めません。Supabaseでセットアップ用SQL（setup.sql）を実行してください。\n詳細: '+res.error.message);
+  }
+  tasksList = res.data || [];
+  populateSelects();
+  renderAll();
+}
+document.getElementById('btnReload').addEventListener('click', async()=>{ await loadAllData(); });
+
+// 未作成カラムがあってもエラーで止まらないよう、自動でそのカラムを除外してリトライする
+async function saveRow(table, data, isUpdate, id) {
+  const payload = {...data};
+  for (let i=0;i<8;i++) {
+    const res = isUpdate
+      ? await sb.from(table).update(payload).eq('id', id)
+      : await sb.from(table).insert(payload);
+    if (!res.error) return { ok:true };
+    const m = /'(\w+)' column/.exec(res.error.message || '');
+    if (m && m[1] in payload) { delete payload[m[1]]; continue; }
+    return { ok:false, error: res.error };
+  }
+  return { ok:false, error:{ message:'リトライ上限に達しました' } };
+}
+
+// ===== セレクト類 =====
+function assigneeNames() {
+  const names = new Set();
+  staffList.filter(s=>s.active!==false).forEach(s=>{ if (s.name) names.add(s.name); });
+  tasksList.forEach(t=>{ if (t.assignee) names.add(t.assignee); });
+  return [...names];
+}
+function populateSelects() {
+  const names = assigneeNames();
+  const nameOpts = names.map(n=>`<option value="${esc(n)}">${esc(n)}</option>`).join('');
+  const srcOpts = SOURCES.map(([n,i])=>`<option value="${esc(n)}">${i} ${esc(n)}</option>`).join('');
+  document.getElementById('qaSource').innerHTML = srcOpts;
+  document.getElementById('qaAssignee').innerHTML = '<option value="">👤 担当未定</option>'+nameOpts;
+  document.getElementById('tSource').innerHTML = '<option value="">-</option>'+srcOpts;
+  document.getElementById('tAssignee').innerHTML = '<option value="">担当未定</option>'+nameOpts;
+  document.getElementById('tStatus').innerHTML = STATUSES.map(s=>`<option value="${s.key}">${s.label}</option>`).join('');
+  const keep1 = document.getElementById('filterAssignee').value;
+  document.getElementById('filterAssignee').innerHTML = '<option value="">全員</option><option value="__none__">担当未定</option>'+nameOpts;
+  if ([...document.getElementById('filterAssignee').options].some(o=>o.value===keep1)) document.getElementById('filterAssignee').value = keep1;
+  const keep2 = document.getElementById('filterSource').value;
+  document.getElementById('filterSource').innerHTML = '<option value="">すべて</option>'+srcOpts;
+  if ([...document.getElementById('filterSource').options].some(o=>o.value===keep2)) document.getElementById('filterSource').value = keep2;
+  const keep3 = document.getElementById('listAssignee').value;
+  document.getElementById('listAssignee').innerHTML = '<option value="">全員</option><option value="__none__">担当未定</option>'+nameOpts;
+  if ([...document.getElementById('listAssignee').options].some(o=>o.value===keep3)) document.getElementById('listAssignee').value = keep3;
+}
+
+// ===== クイック追加 =====
+async function quickAdd() {
+  const title = document.getElementById('qaTitle').value.trim();
+  if (!title) { document.getElementById('qaTitle').focus(); return; }
+  const assignee = document.getElementById('qaAssignee').value;
+  const now = new Date().toISOString();
+  const task = {
+    id: nextId(),
+    title,
+    source: document.getElementById('qaSource').value,
+    requester: document.getElementById('qaRequester').value.trim() || null,
+    assignee: assignee || null,
+    status: assignee ? 'todo' : 'inbox',
+    priority: document.getElementById('qaPriority').value,
+    due_date: document.getElementById('qaDue').value || null,
+    created_by: myName(),
+    created_at: now,
+    status_updated_at: now,
+    last_activity_at: now,
+    checklist: []
+  };
+  const r = await saveRow('tasks', task, false);
+  if (!r.ok) { alert('追加に失敗しました: '+r.error.message); return; }
+  tasksList.unshift(task);
+  document.getElementById('qaTitle').value = '';
+  document.getElementById('qaRequester').value = '';
+  document.getElementById('qaDue').value = '';
+  document.getElementById('qaTitle').focus();
+  populateSelects();
+  renderAll();
+}
+document.getElementById('qaAddBtn').addEventListener('click', quickAdd);
+document.getElementById('qaTitle').addEventListener('keydown', e=>{ if (e.key==='Enter') quickAdd(); });
+document.getElementById('qaMoreBtn').addEventListener('click', ()=>{
+  const qa = document.querySelector('.quick-add');
+  qa.classList.toggle('open');
+  document.getElementById('qaMoreBtn').textContent = qa.classList.contains('open') ? '詳細 ▴' : '詳細 ▾';
+});
+
+// ===== フィルター =====
+function matchesFilter(t) {
+  if (filterState.assignee === '__none__') { if (t.assignee) return false; }
+  else if (filterState.assignee && t.assignee !== filterState.assignee) return false;
+  if (filterState.source && t.source !== filterState.source) return false;
+  if (filterState.search) {
+    const q = filterState.search.toLowerCase();
+    const hay = [t.title, t.requester, t.description, t.blocked_waiting_on, t.blocked_reason].map(x=>String(x||'').toLowerCase()).join(' ');
+    if (!hay.includes(q)) return false;
+  }
+  return true;
+}
+document.getElementById('filterSearch').addEventListener('input', e=>{
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(()=>{ filterState.search = e.target.value.trim(); renderBoard(); }, 300);
+});
+document.getElementById('filterAssignee').addEventListener('change', e=>{ filterState.assignee = e.target.value; renderBoard(); });
+document.getElementById('filterSource').addEventListener('change', e=>{ filterState.source = e.target.value; renderBoard(); });
+document.getElementById('filterClear').addEventListener('click', ()=>{
+  filterState = { search:'', assignee:'', source:'' };
+  document.getElementById('filterSearch').value = '';
+  document.getElementById('filterAssignee').value = '';
+  document.getElementById('filterSource').value = '';
+  renderBoard();
+});
+
+// ===== 描画 =====
+function renderAll() { renderBoard(); renderList(); renderDashboard(); renderStaffList(); }
+
+function sortForColumn(a, b) {
+  const prioRank = { high:0, normal:1, low:2 };
+  const da = dueState(a)==='over'?0:1, db = dueState(b)==='over'?0:1;
+  if (da !== db) return da - db;
+  if (prioRank[a.priority||'normal'] !== prioRank[b.priority||'normal']) return prioRank[a.priority||'normal'] - prioRank[b.priority||'normal'];
+  if (a.due_date && b.due_date) return a.due_date < b.due_date ? -1 : 1;
+  if (a.due_date) return -1;
+  if (b.due_date) return 1;
+  return String(b.created_at||'').localeCompare(String(a.created_at||''));
+}
+
+function cardBadges(t) {
+  let html = '';
+  const ds = dueState(t);
+  if (ds === 'over') html += `<span class="card-badge badge-due-over">⏰ 期限切れ ${esc(fmtShort(t.due_date))}</span>`;
+  else if (ds === 'today') html += `<span class="card-badge badge-due-today">⏰ 本日期限</span>`;
+  else if (t.due_date && t.status !== 'done') html += `<span class="card-badge" style="background:#f0f0f0;color:#888;">📅 ${esc(fmtShort(t.due_date))}</span>`;
+  const sd = stallDays(t);
+  if (sd !== null && sd >= stallRed()) html += `<span class="card-badge badge-stall-r">⏳ ${sd}日停滞</span>`;
+  else if (sd !== null && sd >= stallYellow()) html += `<span class="card-badge badge-stall-y">⏳ ${sd}日停滞</span>`;
+  if (t.status === 'blocked' && t.blocked_waiting_on) html += `<span class="card-badge badge-block">🚧 ${esc(t.blocked_waiting_on)}</span>`;
+  const cp = checklistProgress(t);
+  if (cp) html += `<span class="card-badge badge-check">☑ ${cp.done}/${cp.total}</span>`;
+  return html;
+}
+
+function renderBoard() {
+  const el = document.getElementById('boardEl');
+  const filtered = tasksList.filter(matchesFilter);
+  const tk = todayKey();
+  let visibleCount = 0;
+  let html = '';
+  STATUSES.forEach(st => {
+    let items = filtered.filter(t => t.status === st.key);
+    let doneNote = '';
+    if (st.key === 'done') {
+      const total = items.length;
+      items = items.filter(t => daysSince(t.completed_at || t.last_activity_at) <= DONE_SHOW_DAYS);
+      if (total > items.length) doneNote = `（直近${DONE_SHOW_DAYS}日分のみ表示・全${total}件）`;
+    }
+    items.sort(sortForColumn);
+    const shown = items.slice(0, MAX_CARDS_PER_COLUMN);
+    visibleCount += items.length;
+    html += `<div class="column" data-status="${st.key}">
+      <div class="column-title" style="background:${st.color}">${st.label}${st.hint?`<div style="font-weight:normal;font-size:9px;opacity:0.85;">${st.hint}</div>`:''}</div>
+      <div class="column-count">${items.length}件${doneNote}</div>
+      ${shown.map(t=>{
+        const prioCls = t.priority==='high'?' prio-high':(t.priority==='low'?' prio-low':'');
+        return `<div class="card${prioCls}" draggable="true" data-id="${t.id}">
+          <div class="card-title">${esc(t.title)}</div>
+          ${t.assignee?`<div class="card-info">👤 ${esc(t.assignee)}</div>`:'<div class="card-info" style="color:#e65100;">👤 担当未定</div>'}
+          ${t.requester?`<div class="card-info">🙋 ${esc(t.requester)}</div>`:''}
+          ${t.source?`<span class="card-chip">${sourceIcon(t.source)} ${esc(t.source)}</span>`:''}
+          ${cardBadges(t)}
+          ${NEXT_STATUS[t.status]?`<button class="card-advance" data-adv="${t.id}" data-to="${NEXT_STATUS[t.status]}">▸ ${statusOf(NEXT_STATUS[t.status]).label}へ</button>`:''}
+        </div>`;
+      }).join('')}
+      ${items.length>MAX_CARDS_PER_COLUMN?`<div class="column-count">…他${items.length-MAX_CARDS_PER_COLUMN}件（絞り込んで表示）</div>`:''}
+    </div>`;
+  });
+  el.innerHTML = html;
+  document.getElementById('filterCount').textContent = `表示: ${visibleCount}件 / 全${tasksList.length}件`;
+
+  // カードクリック → 編集モーダル
+  el.querySelectorAll('.card').forEach(c=>{
+    c.addEventListener('click', ()=>openTask(Number(c.dataset.id)));
+    c.addEventListener('dragstart', e=>{
+      e.dataTransfer.setData('text/plain', c.dataset.id);
+      c.classList.add('dragging');
+    });
+    c.addEventListener('dragend', ()=>c.classList.remove('dragging'));
+  });
+  // スマホ用「次へ進める」ボタン（カードのクリック＝モーダル表示とは分離）
+  el.querySelectorAll('.card-advance').forEach(b=>b.addEventListener('click', e=>{
+    e.stopPropagation();
+    changeStatus(Number(b.dataset.adv), b.dataset.to);
+  }));
+  // 列へのドロップ → ステータス変更
+  el.querySelectorAll('.column').forEach(col=>{
+    col.addEventListener('dragover', e=>{ e.preventDefault(); col.classList.add('drag-over'); });
+    col.addEventListener('dragleave', ()=>col.classList.remove('drag-over'));
+    col.addEventListener('drop', async e=>{
+      e.preventDefault();
+      col.classList.remove('drag-over');
+      const id = Number(e.dataTransfer.getData('text/plain'));
+      await changeStatus(id, col.dataset.status);
+    });
+  });
+}
+
+async function changeStatus(id, newStatus) {
+  const t = tasksList.find(x=>x.id===id);
+  if (!t || t.status === newStatus) return;
+  const now = new Date().toISOString();
+  const upd = {
+    status: newStatus,
+    status_updated_at: now,
+    last_activity_at: now,
+    completed_at: newStatus === 'done' ? now : null
+  };
+  const r = await saveRow('tasks', upd, true, id);
+  if (!r.ok) { alert('更新に失敗しました: '+r.error.message); return; }
+  Object.assign(t, upd);
+  renderAll();
+  // ブロック中に動かしたら「何待ちか」の入力を促す
+  if (newStatus === 'blocked' && !t.blocked_waiting_on) {
+    openTask(id);
+    setTimeout(()=>document.getElementById('tWaitingOn').focus(), 100);
+  }
+}
+
+// ===== タスク一覧 =====
+function listFiltered() {
+  const q = (document.getElementById('listSearch').value||'').trim().toLowerCase();
+  const asg = document.getElementById('listAssignee').value;
+  const showDone = document.getElementById('listShowDone').checked;
+  return tasksList.filter(t=>{
+    if (!showDone && t.status === 'done') return false;
+    if (asg === '__none__') { if (t.assignee) return false; }
+    else if (asg && t.assignee !== asg) return false;
+    if (q) {
+      const hay = [t.title, t.requester, t.description, t.assignee].map(x=>String(x||'').toLowerCase()).join(' ');
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  });
+}
+const LIST_COLS = [
+  {key:'title', label:'タイトル'},
+  {key:'status', label:'状態'},
+  {key:'assignee', label:'担当'},
+  {key:'priority', label:'優先度'},
+  {key:'due_date', label:'期限'},
+  {key:'stall', label:'停滞'},
+  {key:'source', label:'経路'},
+  {key:'requester', label:'依頼元'},
+  {key:'created_at', label:'登録日'}
+];
+function renderList() {
+  const items = listFiltered();
+  const prioRank = { high:0, normal:1, low:2 };
+  const stRank = {}; STATUSES.forEach((s,i)=>stRank[s.key]=i);
+  items.sort((a,b)=>{
+    let va, vb;
+    switch (listSort.key) {
+      case 'stall': va = stallDays(a) ?? -1; vb = stallDays(b) ?? -1; break;
+      case 'priority': va = prioRank[a.priority||'normal']; vb = prioRank[b.priority||'normal']; break;
+      case 'status': va = stRank[a.status] ?? 9; vb = stRank[b.status] ?? 9; break;
+      case 'due_date': va = a.due_date || '9999'; vb = b.due_date || '9999'; break;
+      default: va = String(a[listSort.key]||''); vb = String(b[listSort.key]||'');
+    }
+    if (va < vb) return -1*listSort.dir;
+    if (va > vb) return 1*listSort.dir;
+    return 0;
+  });
+  const tk = todayKey();
+  let html = '<tr>'+LIST_COLS.map(c=>`<th data-key="${c.key}">${c.label}${listSort.key===c.key?(listSort.dir===1?' ▲':' ▼'):''}</th>`).join('')+'</tr>';
+  html += items.slice(0,500).map(t=>{
+    const st = statusOf(t.status);
+    const ds = dueState(t);
+    const sd = stallDays(t);
+    const dueCls = ds==='over'?'td-over':(ds==='today'?'td-today':'');
+    const stallTxt = sd===null?'':(sd>=stallRed()?`<span class="td-over">⏳${sd}日</span>`:(sd>=stallYellow()?`<span class="td-today">⏳${sd}日</span>`:`${sd}日`));
+    return `<tr data-id="${t.id}">
+      <td><b>${esc(t.title)}</b>${t.status==='blocked'&&t.blocked_waiting_on?`<br><span style="color:#ad1457;font-size:11px;">🚧 ${esc(t.blocked_waiting_on)}</span>`:''}</td>
+      <td><span class="st-chip" style="background:${st.color}">${st.label}</span></td>
+      <td>${esc(t.assignee)||'<span style="color:#e65100;">未定</span>'}</td>
+      <td>${PRIO_ICON[t.priority||'normal']}</td>
+      <td class="${dueCls}">${ds==='over'?'⏰':''}${esc(t.due_date||'')}</td>
+      <td>${stallTxt}</td>
+      <td>${t.source?sourceIcon(t.source)+' '+esc(t.source):''}</td>
+      <td>${esc(t.requester||'')}</td>
+      <td>${esc(String(t.created_at||'').slice(0,10))}</td>
+    </tr>`;
+  }).join('');
+  const table = document.getElementById('listTable');
+  table.innerHTML = html;
+  document.getElementById('listCount').textContent = `${items.length}件${items.length>500?'（先頭500件を表示）':''}`;
+  table.querySelectorAll('th').forEach(th=>th.addEventListener('click', ()=>{
+    const k = th.dataset.key;
+    if (listSort.key === k) listSort.dir *= -1; else listSort = { key:k, dir:1 };
+    renderList();
+  }));
+  table.querySelectorAll('tr[data-id]').forEach(tr=>tr.addEventListener('click', ()=>openTask(Number(tr.dataset.id))));
+}
+document.getElementById('listSearch').addEventListener('input', ()=>{ clearTimeout(searchTimer); searchTimer=setTimeout(renderList,300); });
+document.getElementById('listAssignee').addEventListener('change', renderList);
+document.getElementById('listShowDone').addEventListener('change', renderList);
+
+// ===== ダッシュボード =====
+function renderDashboard() {
+  const open = tasksList.filter(t=>OPEN_STATUSES.has(t.status));
+  const overdue = open.filter(t=>dueState(t)==='over');
+  const blocked = open.filter(t=>t.status==='blocked');
+  const stalled = open.filter(t=>{ const d=stallDays(t); return d!==null && d>=stallYellow() && t.status!=='blocked'; });
+  const inbox = open.filter(t=>t.status==='inbox');
+  const noAssignee = open.filter(t=>!t.assignee);
+  const doneThisWeek = tasksList.filter(t=>t.status==='done' && daysSince(t.completed_at||t.last_activity_at)<=7);
+
+  const badge = overdue.length + blocked.length;
+  const badgeEl = document.getElementById('dashBadge');
+  badgeEl.style.display = badge ? '' : 'none';
+  badgeEl.textContent = badge;
+
+  // 担当者別サマリー
+  const byPerson = new Map();
+  const rowOf = name => {
+    if (!byPerson.has(name)) byPerson.set(name, { name, open:0, doing:0, blocked:0, overdue:0, stalled:0, done7:0 });
+    return byPerson.get(name);
+  };
+  assigneeNames().forEach(n=>rowOf(n));
+  open.forEach(t=>{
+    const r = rowOf(t.assignee || '（担当未定）');
+    r.open++;
+    if (t.status==='doing') r.doing++;
+    if (t.status==='blocked') r.blocked++;
+    if (dueState(t)==='over') r.overdue++;
+    const d = stallDays(t);
+    if (d!==null && d>=stallYellow()) r.stalled++;
+  });
+  doneThisWeek.forEach(t=>{ rowOf(t.assignee || '（担当未定）').done7++; });
+  const personRows = [...byPerson.values()].sort((a,b)=>(b.blocked+b.overdue)-(a.blocked+a.overdue) || b.open-a.open);
+
+  const numCell = (n, cls) => n ? `<span class="${cls}">${n}</span>` : '<span class="num-zero">0</span>';
+
+  let html = `<div class="dash-cards">
+    <div class="dash-card ${overdue.length?'danger':'ok'}" data-jump="overdue"><div class="dash-card-num">${overdue.length}</div><div class="dash-card-label">⏰ 期限切れ</div></div>
+    <div class="dash-card ${blocked.length?'danger':'ok'}" data-jump="blocked"><div class="dash-card-num">${blocked.length}</div><div class="dash-card-label">🚧 ブロック中</div></div>
+    <div class="dash-card ${stalled.length?'warn':'ok'}" data-jump="stalled"><div class="dash-card-num">${stalled.length}</div><div class="dash-card-label">⏳ 停滞（${stallYellow()}日以上）</div></div>
+    <div class="dash-card ${inbox.length?'warn':'ok'}" data-jump="inbox"><div class="dash-card-num">${inbox.length}</div><div class="dash-card-label">📥 未振り分け</div></div>
+    <div class="dash-card ok"><div class="dash-card-num">${doneThisWeek.length}</div><div class="dash-card-label">✅ 直近7日の完了</div></div>
+  </div>`;
+
+  html += `<div class="dash-section"><h3>👥 担当者別サマリー（行クリックでその人のボードへ）</h3>
+    <table class="dash-table"><tr><th>担当者</th><th>対応中</th><th>進行中</th><th>🚧ブロック</th><th>⏳停滞</th><th>⏰期限切れ</th><th>✅完了(7日)</th></tr>
+    ${personRows.map(r=>`<tr class="clickable" data-person="${esc(r.name)}">
+      <td><b>${esc(r.name)}</b></td>
+      <td>${r.open||'<span class="num-zero">0</span>'}</td>
+      <td>${r.doing||'<span class="num-zero">0</span>'}</td>
+      <td>${numCell(r.blocked,'num-bad')}</td>
+      <td>${numCell(r.stalled,'num-warn')}</td>
+      <td>${numCell(r.overdue,'num-bad')}</td>
+      <td>${r.done7||'<span class="num-zero">0</span>'}</td>
+    </tr>`).join('')}</table></div>`;
+
+  const taskRow = t => {
+    const sd = stallDays(t);
+    return `<tr class="clickable" data-task="${t.id}">
+      <td>${esc(t.assignee)||'<span style="color:#e65100;">未定</span>'}</td>
+      <td><b>${esc(t.title)}</b></td>
+      <td>${t.status==='blocked'?`<span style="color:#ad1457;">🚧 ${esc(t.blocked_waiting_on||'（何待ちか未記入）')}</span>${t.blocked_reason?`<br><span style="color:#888;font-size:11px;">${esc(t.blocked_reason)}</span>`:''}`:esc(t.requester||'')}</td>
+      <td>${t.due_date?(dueState(t)==='over'?`<span class="num-bad">⏰${esc(t.due_date)}</span>`:esc(t.due_date)):''}</td>
+      <td>${sd!==null?sd+'日':''}</td>
+    </tr>`;
+  };
+
+  html += `<div class="dash-section" id="dashBlocked"><h3>🚧 ブロック中のタスク — 誰が何を待っているか</h3>`;
+  html += blocked.length
+    ? `<table class="dash-table"><tr><th>担当</th><th>タスク</th><th>何待ち</th><th>期限</th><th>経過</th></tr>${blocked.sort((a,b)=>(stallDays(b)||0)-(stallDays(a)||0)).map(taskRow).join('')}</table>`
+    : '<p class="empty-note">ブロック中のタスクはありません 🎉</p>';
+  html += `</div>`;
+
+  html += `<div class="dash-section" id="dashStalled"><h3>⏳ 停滞中のタスク（${stallYellow()}日以上動きなし・ブロック中を除く）</h3>`;
+  html += stalled.length
+    ? `<table class="dash-table"><tr><th>担当</th><th>タスク</th><th>依頼元</th><th>期限</th><th>停滞</th></tr>${stalled.sort((a,b)=>(stallDays(b)||0)-(stallDays(a)||0)).slice(0,30).map(taskRow).join('')}${stalled.length>30?`<tr><td colspan="5" class="empty-note">…他${stalled.length-30}件</td></tr>`:''}</table>`
+    : '<p class="empty-note">停滞しているタスクはありません 🎉</p>';
+  html += `</div>`;
+
+  html += `<div class="dash-section" id="dashOverdue"><h3>⏰ 期限切れのタスク</h3>`;
+  html += overdue.length
+    ? `<table class="dash-table"><tr><th>担当</th><th>タスク</th><th>依頼元</th><th>期限</th><th>停滞</th></tr>${overdue.sort((a,b)=>String(a.due_date).localeCompare(String(b.due_date))).map(taskRow).join('')}</table>`
+    : '<p class="empty-note">期限切れのタスクはありません 🎉</p>';
+  html += `</div>`;
+
+  const el = document.getElementById('dashBody');
+  el.innerHTML = html;
+  el.querySelectorAll('tr[data-person]').forEach(tr=>tr.addEventListener('click', ()=>{
+    const name = tr.dataset.person;
+    filterState.assignee = name==='（担当未定）' ? '__none__' : name;
+    document.getElementById('filterAssignee').value = filterState.assignee;
+    switchPage('board');
+    renderBoard();
+  }));
+  el.querySelectorAll('tr[data-task]').forEach(tr=>tr.addEventListener('click', ()=>openTask(Number(tr.dataset.task))));
+  el.querySelectorAll('.dash-card[data-jump]').forEach(c=>c.addEventListener('click', ()=>{
+    const j = c.dataset.jump;
+    if (j==='inbox') { switchPage('board'); return; }
+    const target = document.getElementById(j==='blocked'?'dashBlocked':(j==='stalled'?'dashStalled':'dashOverdue'));
+    if (target) target.scrollIntoView({behavior:'smooth'});
+  }));
+}
+
+// ===== 自分の要注意タスクバナー =====
+function showMyAlerts() {
+  const me = myName();
+  const mine = tasksList.filter(t=>OPEN_STATUSES.has(t.status) && t.assignee === me);
+  const items = [];
+  mine.filter(t=>dueState(t)==='over').slice(0,5).forEach(t=>items.push({t, cls:'overdue', label:`⏰ ${t.title}`}));
+  mine.filter(t=>t.status==='blocked').slice(0,5).forEach(t=>items.push({t, cls:'blocked', label:`🚧 ${t.title}`}));
+  mine.filter(t=>{ const d=stallDays(t); return t.status!=='blocked' && dueState(t)!=='over' && d!==null && d>=stallRed(); }).slice(0,5)
+      .forEach(t=>items.push({t, cls:'', label:`⏳ ${t.title}`}));
+  if (!items.length) return;
+  const banner = document.getElementById('alertBanner');
+  const wrap = document.getElementById('alertItems');
+  wrap.innerHTML = items.map((x,i)=>`<span class="alert-item ${x.cls}" data-i="${i}">${esc(x.label)}</span>`).join('');
+  wrap.querySelectorAll('.alert-item').forEach(s=>s.addEventListener('click', ()=>openTask(items[Number(s.dataset.i)].t.id)));
+  banner.classList.add('show');
+}
+document.getElementById('alertClose').addEventListener('click', ()=>document.getElementById('alertBanner').classList.remove('show'));
+
+// ===== タスク編集モーダル =====
+function openTask(id) {
+  const t = tasksList.find(x=>x.id===id);
+  if (!t) return;
+  editingId = id;
+  editChecklist = Array.isArray(t.checklist) ? JSON.parse(JSON.stringify(t.checklist)) : [];
+  document.getElementById('taskModalTitle').textContent = 'タスク編集';
+  document.getElementById('tTitle').value = t.title || '';
+  document.getElementById('tDesc').value = t.description || '';
+  document.getElementById('tStatus').value = t.status || 'todo';
+  document.getElementById('tPriority').value = t.priority || 'normal';
+  document.getElementById('tAssignee').value = t.assignee || '';
+  document.getElementById('tDue').value = t.due_date || '';
+  document.getElementById('tSource').value = t.source || '';
+  document.getElementById('tRequester').value = t.requester || '';
+  document.getElementById('tWaitingOn').value = t.blocked_waiting_on || '';
+  document.getElementById('tBlockedReason').value = t.blocked_reason || '';
+  toggleBlockedFields();
+  const sd = stallDays(t);
+  document.getElementById('taskMeta').innerHTML =
+    `登録: ${esc(fmtDateTime(t.created_at))} ${t.created_by?('by '+esc(t.created_by)):''} ／ 最終更新: ${esc(fmtDateTime(t.last_activity_at))}`+
+    (sd!==null?` ／ ⏳ 停滞 ${sd}日`:'')+
+    (t.completed_at?` ／ ✅ 完了: ${esc(fmtDateTime(t.completed_at))}`:'');
+  renderChecklist();
+  loadComments(id);
+  document.getElementById('taskModal').classList.add('show');
+}
+function closeTask() {
+  document.getElementById('taskModal').classList.remove('show');
+  editingId = null;
+}
+function toggleBlockedFields() {
+  const isBlocked = document.getElementById('tStatus').value === 'blocked';
+  document.getElementById('blockedFields').classList.toggle('show', isBlocked);
+}
+document.getElementById('tStatus').addEventListener('change', toggleBlockedFields);
+document.getElementById('tCancelBtn').addEventListener('click', closeTask);
+document.getElementById('taskModal').addEventListener('click', e=>{ if (e.target.id==='taskModal') closeTask(); });
+
+async function saveTaskFromModal(overrideStatus) {
+  const t = tasksList.find(x=>x.id===editingId);
+  if (!t) return;
+  const title = document.getElementById('tTitle').value.trim();
+  if (!title) { alert('タイトルを入力してください'); return; }
+  const newStatus = overrideStatus || document.getElementById('tStatus').value;
+  if (newStatus === 'blocked' && !document.getElementById('tWaitingOn').value.trim()) {
+    alert('🚧 ブロック中にするには「何を待っているか」を入力してください。\n（誰が何に詰まっているかを可視化するための必須項目です）');
+    document.getElementById('tWaitingOn').focus();
+    return;
+  }
+  const now = new Date().toISOString();
+  const upd = {
+    title,
+    description: document.getElementById('tDesc').value.trim() || null,
+    status: newStatus,
+    priority: document.getElementById('tPriority').value,
+    assignee: document.getElementById('tAssignee').value || null,
+    due_date: document.getElementById('tDue').value || null,
+    source: document.getElementById('tSource').value || null,
+    requester: document.getElementById('tRequester').value.trim() || null,
+    blocked_waiting_on: document.getElementById('tWaitingOn').value.trim() || null,
+    blocked_reason: document.getElementById('tBlockedReason').value.trim() || null,
+    checklist: editChecklist,
+    last_activity_at: now,
+    status_updated_at: newStatus !== t.status ? now : t.status_updated_at,
+    completed_at: newStatus === 'done' ? (t.completed_at || now) : null
+  };
+  const r = await saveRow('tasks', upd, true, editingId);
+  if (!r.ok) { alert('保存に失敗しました: '+r.error.message); return; }
+  Object.assign(t, upd);
+  closeTask();
+  populateSelects();
+  renderAll();
+}
+document.getElementById('tSaveBtn').addEventListener('click', ()=>saveTaskFromModal());
+document.getElementById('tDoneBtn').addEventListener('click', ()=>saveTaskFromModal('done'));
+document.getElementById('tDeleteBtn').addEventListener('click', async()=>{
+  if (!confirm('このタスクを削除しますか？（元に戻せません）')) return;
+  const { error } = await sb.from('tasks').delete().eq('id', editingId);
+  if (error) { alert('削除に失敗しました: '+error.message); return; }
+  await sb.from('task_comments').delete().eq('task_id', editingId);
+  tasksList = tasksList.filter(x=>x.id!==editingId);
+  closeTask();
+  renderAll();
+});
+
+// ===== チェックリスト =====
+function renderChecklist() {
+  const el = document.getElementById('chkList');
+  el.innerHTML = editChecklist.map((c,i)=>`<div class="chk-item${c.done?' done':''}">
+    <input type="checkbox" data-i="${i}" ${c.done?'checked':''}>
+    <span>${esc(c.text)}</span>
+    <button data-del="${i}" title="削除">✕</button>
+  </div>`).join('') || '<div class="empty-note">サブタスクはありません</div>';
+  const done = editChecklist.filter(c=>c.done).length;
+  document.getElementById('chkProgress').textContent = editChecklist.length ? ` ${done}/${editChecklist.length}` : '';
+  el.querySelectorAll('input[type=checkbox]').forEach(cb=>cb.addEventListener('change', ()=>{
+    editChecklist[Number(cb.dataset.i)].done = cb.checked;
+    renderChecklist();
+  }));
+  el.querySelectorAll('button[data-del]').forEach(b=>b.addEventListener('click', ()=>{
+    editChecklist.splice(Number(b.dataset.del),1);
+    renderChecklist();
+  }));
+}
+function addChecklistItem() {
+  const inp = document.getElementById('chkNewText');
+  const text = inp.value.trim();
+  if (!text) return;
+  editChecklist.push({ text, done:false });
+  inp.value = '';
+  renderChecklist();
+  inp.focus();
+}
+document.getElementById('chkAddBtn').addEventListener('click', addChecklistItem);
+document.getElementById('chkNewText').addEventListener('keydown', e=>{ if (e.key==='Enter') { e.preventDefault(); addChecklistItem(); } });
+
+// ===== コメント =====
+async function loadComments(taskId) {
+  document.getElementById('cmtList').innerHTML = '<div class="empty-note">読み込み中…</div>';
+  const { data, error } = await sb.from('task_comments').select('*').eq('task_id', taskId).order('created_at',{ascending:true});
+  editComments = error ? [] : (data || []);
+  renderComments();
+}
+function renderComments() {
+  document.getElementById('cmtList').innerHTML = editComments.map(c=>
+    `<div class="cmt-item"><div class="cmt-head">${esc(c.author||'')} ・ ${esc(fmtDateTime(c.created_at))}</div>${esc(c.body)}</div>`
+  ).join('') || '<div class="empty-note">コメントはまだありません</div>';
+}
+async function addComment() {
+  const inp = document.getElementById('cmtNewText');
+  const body = inp.value.trim();
+  if (!body || !editingId) return;
+  const c = { id: nextId(), task_id: editingId, author: myName(), body, created_at: new Date().toISOString() };
+  const r = await saveRow('task_comments', c, false);
+  if (!r.ok) { alert('コメントの保存に失敗しました: '+r.error.message); return; }
+  editComments.push(c);
+  inp.value = '';
+  renderComments();
+  // コメント＝動きがあったとみなして停滞タイマーをリセット
+  const t = tasksList.find(x=>x.id===editingId);
+  if (t) {
+    const now = new Date().toISOString();
+    await saveRow('tasks', { last_activity_at: now }, true, editingId);
+    t.last_activity_at = now;
+  }
+}
+document.getElementById('cmtAddBtn').addEventListener('click', addComment);
+document.getElementById('cmtNewText').addEventListener('keydown', e=>{ if (e.key==='Enter') { e.preventDefault(); addComment(); } });
+
+// ===== スタッフ管理（ATSと共通のstaffテーブル） =====
+function renderStaffList() {
+  const c = document.getElementById('staffListEl');
+  if (!c) return;
+  if (staffLoadError) {
+    c.innerHTML = '<p style="color:#c62828;font-size:13px;">⚠️ staff テーブルが見つかりません。SupabaseでATSのsetup.sqlを実行すると有効になります。</p>';
+    document.getElementById('staffAddRow').style.display='none';
+    return;
+  }
+  document.getElementById('staffAddRow').style.display = isAdminUser ? 'flex' : 'none';
+  c.innerHTML = staffList.map(s=>{
+    const btns = isAdminUser ? `
+      <button class="btn-small" data-toggle="${s.id}">${s.active===false?'再開':'停止'}</button>
+      <button class="btn-small" data-del="${s.id}" style="background:#ffebee;color:#c62828;">削除</button>` : '';
+    return `<div class="staff-item${s.active===false?' staff-inactive':''}">
+      <b>${esc(s.name||s.email)}</b> <span style="color:#888;font-size:12px;">${esc(s.email)}</span>
+      <span class="staff-role${s.role==='admin'?' admin':''}">${s.role==='admin'?'管理者':'メンバー'}</span>
+      <span style="margin-left:auto;display:flex;gap:6px;">${btns}</span>
+    </div>`;
+  }).join('') || '<p class="empty-note">スタッフが登録されていません</p>';
+  c.querySelectorAll('button[data-toggle]').forEach(b=>b.addEventListener('click', async()=>{
+    const id = Number(b.dataset.toggle);
+    const s = staffList.find(x=>x.id===id); if (!s) return;
+    const next = s.active === false;
+    const { error } = await sb.from('staff').update({ active: next }).eq('id', id);
+    if (error) { alert('更新に失敗しました: '+error.message); return; }
+    s.active = next;
+    renderStaffList();
+  }));
+  c.querySelectorAll('button[data-del]').forEach(b=>b.addEventListener('click', async()=>{
+    const id = Number(b.dataset.del);
+    if (!confirm('このスタッフを削除しますか？（ATSにもログインできなくなります）')) return;
+    const { error } = await sb.from('staff').delete().eq('id', id);
+    if (error) { alert('削除に失敗しました: '+error.message); return; }
+    staffList = staffList.filter(x=>x.id!==id);
+    renderStaffList();
+    populateSelects();
+  }));
+}
+document.getElementById('staffAddBtn').addEventListener('click', async()=>{
+  const email = document.getElementById('staffEmail').value.trim().toLowerCase();
+  const name = document.getElementById('staffName').value.trim();
+  if (!email || !email.includes('@')) { alert('メールアドレスを入力してください'); return; }
+  if (staffList.some(s=>(s.email||'').toLowerCase()===email)) { alert('このメールアドレスはすでに登録されています'); return; }
+  const data = { id: Date.now(), email, name: name||email, role: document.getElementById('staffRole').value, active:true };
+  const { error } = await sb.from('staff').insert(data);
+  if (error) { alert('追加に失敗しました: '+error.message); return; }
+  staffList.push(data);
+  document.getElementById('staffEmail').value='';
+  document.getElementById('staffName').value='';
+  renderStaffList();
+  populateSelects();
+});
+
+// ===== 停滞しきい値設定 =====
+document.getElementById('stallYellowInput').value = stallYellow();
+document.getElementById('stallRedInput').value = stallRed();
+document.getElementById('stallSaveBtn').addEventListener('click', ()=>{
+  const y = parseInt(document.getElementById('stallYellowInput').value) || 3;
+  const r = parseInt(document.getElementById('stallRedInput').value) || 7;
+  if (y >= r) { alert('赤バッジの日数は黄色より大きくしてください'); return; }
+  localStorage.setItem('task-stall-y', y);
+  localStorage.setItem('task-stall-r', r);
+  alert('保存しました');
+  renderAll();
+});
+
+// ===== ページ切替 =====
+function switchPage(name) {
+  document.querySelectorAll('.nav-item[data-page]').forEach(n=>n.classList.toggle('active', n.dataset.page===name));
+  document.querySelectorAll('.page[data-page]').forEach(p=>p.classList.toggle('active', p.dataset.page===name));
+}
+document.querySelectorAll('.nav-item[data-page]').forEach(n=>n.addEventListener('click', ()=>switchPage(n.dataset.page)));
+</script>
+</body>
+</html>
